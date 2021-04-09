@@ -1,0 +1,79 @@
+import numpy as np
+import sinkhorn as sh
+
+class Gaussian_Mixture:
+    """
+    Creates a new Gaussian Mixture Model. 
+    """
+    def __init__(self,n,d):
+        self.n = n
+        self.d = d
+        self.m = [np.zeros([1,d]) for i in range(n)]
+        self.cov = [np.zeros([d,d]) for i in range(n)]
+    
+    def assign_w(self,w_arr):
+        if np.size(w_arr) != self.n:
+            raise 'Error: number of weights and components are not equal'
+        else:
+            w_norm = w_arr / np.sum(w_arr)
+            self.w = w_norm
+    
+    def assign_m(self,m_arr):
+        #check that rows = n, cols = d
+        for i in range(self.n):
+            self.m[i] = m_arr[i,:]
+
+    def assign_cov(self,cov_arr):
+        for i in range(self.n):
+            self.cov[i] = cov_arr[i:i+self.d,:]
+            #do check here that self.cov[i] is positive semidefinite
+
+
+
+def Analytical_Wasserstein(f,g):
+    """
+    Computes the analytical (exact) solution for the 2-Wasserstein distance between Gaussian distributions of any dimension. Note that while the inputs are Gaussian Mixture Models,
+    these MUST have one component for the result to be correct.
+    Inputs:
+        f: source distribution (Gaussian_Mixture)
+        g: target distribution (Gaussian_Mixture)
+    Outputs:
+        W2: exact 2-Wasserstein distance between f and g (float)
+    """
+    #add error here if both f and g are not 1 component Gaussian_Mixture
+
+    mean_dist = np.linalg.norm(f.m[0] - g.m[0])**2
+    bures = np.trace(f.cov[0] + g.cov[0] - 2 * (f.cov[0]**(1/2) @ g.cov[0] @ f.cov[0]**(1/2))**(1/2))
+    W2 = mean_dist + bures
+
+    return W2
+
+
+def Wasserstein_Cost(f,g):
+    """
+    Generates a cost matrix for Mixture-Wasserstein computations. Each row corresponds to an unweighted source component while the columns are the unweighted target components.
+    Inputs:
+        f: source Gaussian mixture (Gaussian_Mixture)
+        g: target Gaussian mixture (Gaussian_Mixture)
+    Outputs:
+        W: transport cost between all component combinations for GMM transport (array)
+    """
+    W = np.zeros([f.n,g.n])
+
+    for i in range(f.n):
+        f_i = Gaussian_Mixture(1,f.d)
+        f_i.assign_m(f.m[i])
+        f_i.assign_cov(f.cov[i])
+        for j in range(g.n):
+            g_j = Gaussian_Mixture(1,g.d)
+            g_j.assign_m(g.m[j])
+            g_j.assign_cov(g.cov[j])
+            
+            W[i,j] = Analytical_Wasserstein(f_i,g_j) 
+
+    return W
+
+
+def GMM_Transport(f,g,reg,num_iter=100):
+    W = Wasserstein_Cost(f,g)
+    P, u, v = sh.Sinkhorn(f,g,W,reg,num_iter=num_iter)
