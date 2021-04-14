@@ -1,5 +1,5 @@
 import numpy as np
-import Core_Functions.sinkhorn as sh
+import ot
 
 class Gaussian_Mixture:
     """
@@ -19,7 +19,7 @@ class Gaussian_Mixture:
         Inputs:
             w_arr: vector of weights (1 x n numpy array)
         """
-        if np.size(w_arr) != self.n:
+        if np.size(w_arr) != (self.n):
             raise Exception('number of weights and components are not equal')
         else:
             self.w = w_arr
@@ -67,16 +67,16 @@ class Analytical_Gradients:
         """
         Derivative of the 2-Wasserstein distance between f_i and g_j with respect to each component of the f_i mean vector.
         Inputs:
-            i: index of the source component
-            j: index of the target component
+            i: index of the source component (int)
+            j: index of the target component (int)
         """
         return self.mean[i,j,:]
 
     def dsigma(self,i,j):
         """Derivative of the 2-Wasserstein distance between f_i and g_j with respect to each component of the f_i covariance matrix.
         Inputs:
-            i: index of the source component
-            j: index of the target component
+            i: index of the source component (int)
+            j: index of the target component (int)
         """
         return self.cov[i,j,:,:]
 
@@ -106,7 +106,7 @@ def Wasserstein_Cost(f,g):
         f: source Gaussian mixture (Gaussian_Mixture)
         g: target Gaussian mixture (Gaussian_Mixture)
     Outputs:
-        W: transport cost between all component combinations for GMM transport (array)
+        W: transport cost between all component combinations for GMM transport (n x m array)
     """
     W = np.zeros([f.n,g.n])
 
@@ -124,13 +124,57 @@ def Wasserstein_Cost(f,g):
     return W
 
 
-def GMM_Transport(f,g,reg,num_iter=100,plan=False):
-    # ! Dont like this much - change when doin log domain, just get out Wasserstein, gradient, and plan for derivs in one go
-    # ! Should be able to do log domain stuff using POT and returining log to get the scaling vectors from dictionary
-    # ? potential outputs are therefore GW2, dGW_dp, P --> dGW_dmu/dSigma later
+def GMM_Transport(f,g,reg):
+    """
+    Using log-domain Sinkhorn iterations to solve the entropically regularised Gaussian mixture model OT problem.
+    Inputs:
+        f: source mixture (Gaussian_Mixture)
+        g: target mixture (Gaussian_Mixture)
+        reg: entropic regularisation parameter (float)
+    Outputs:
+        GW: 2-Wasserstein distance on space of GMMs (float)
+        P: transport plan between weighting vectors of f and g (n x m array)
+        alpha: log domain scaling vector rescaled by regularisation parameter (1 x n array)   
+    """
     W = Wasserstein_Cost(f,g)
-    Sink_Div = sh.Sinkhorn_Divergence(f.w,g.w,W,reg,num_iter=num_iter,plan=plan)
-    return Sink_Div
+    # now do log domain OT to get plan and the dictionary
+    P, log = ot.bregman.sinkhorn_stabilized(f.w,g.w,W,reg,log=True)
+    alpha = reg * log['logu']
+    beta = reg * log['logv']
+    GW = np.sum(np.dot(f.w,alpha)) + np.sum(np.dot(g.w,beta))
+    return GW, P, alpha
+
+
+def Wasserstein_Gradients(f,g,P,alpha):
+    """
+    Determines the derivatives of the Gauss-Wasserstein distance with respect to each of the source mixture model parameters. 
+    Inputs:
+        f: source mixture (Gaussian_Mixture)
+        g: target mixture (Gaussian_Mixture)
+        P: optimal transport plan between weighting vectors (n x m array)
+        alpha: scaling vector from GMM_Transport (1 x n array)
+    Outputs:
+        dGW_dp: derivative of GW with respect to each component weight (1 x n array)
+        dGW_dmu: derivative of GW with respect to each mean vector (n x d array)
+        dGW_dsigma: derivative of GW with respect to each covariance matrix (n x d x d array)
+    """
+    # w.r.t. weights is simple: the weights are the data so normal entropic regularisation result from dual problem.
+    dGW_dp = alpha - np.mean(alpha)
+
+    #now for the mean and covariance.
+    dW = Analytical_Gradients(f,g)
+    dGW_dmu = np.zeros([f.n,g.n,f.d])
+    dGW_dsigma = np.zeros([f.n,g.n,f.d,f.d])
+    for i in range(f.n):
+        for j in range(g.n):
+            dGW_dmu[i,j,:] = P[i,j] * dW.dmu(i,j)
+            dGW_dsigma[i,j,:,:] = P[i,j] * dW.dsigma(i,j)
+
+    #add up over each source component (chain rule)
+    dGW_dmu = np.sum(dGW_dmu,axis=1)
+    dGW_dsigma = np.sum(dGW_dsigma,axis=1)
+
+    return dGW_dp, dGW_dmu, dGW_dsigma
 
 
 
