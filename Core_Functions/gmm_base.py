@@ -1,5 +1,6 @@
 import numpy as np
 import ot
+from scipy.linalg import fractional_matrix_power as fmp
 
 class Gaussian_Mixture:
     """
@@ -22,7 +23,7 @@ class Gaussian_Mixture:
         if np.size(w_arr) != (self.n):
             raise Exception('number of weights and components are not equal')
         else:
-            self.w = w_arr
+            self.w = w_arr / (np.sum(w_arr))
     
     def assign_m(self,m_arr):
         """
@@ -60,8 +61,14 @@ class Analytical_Gradients:
         for i in range(f.n):
             for j in range(g.n):
                 self.mean[i,j,:] = 2 * (f.m[i,:] - g.m[j,:])
-                self.cov[i,j,:,:] = (np.eye(f.d) - f.cov[i,:,:]**(-1/2) @ (f.cov[i,:,:]**(1/2) 
-                @ g.cov[j,:,:] @ f.cov[i,:,:]**(1/2))**(1/2) @ f.cov[i,:,:]**(-1/2))
+
+                # * split this into lots of parts to make sure it is right!
+                A1 = fmp(f.cov[i,:,:],-0.5)
+                A2 = fmp(f.cov[i,:,:],0.5)
+                B = g.cov[j,:,:]
+                C = fmp(A2 @ B @ A2,0.5)
+                D = A1 @ C @ A1
+                self.cov[i,j,:,:] = np.eye(f.d) - D
 
     def dmu(self,i,j):
         """
@@ -93,7 +100,11 @@ def Analytical_Wasserstein(f,g):
     #add error here if both f and g are not 1 component Gaussian_Mixture
 
     mean_dist = np.linalg.norm(f.m[0,:] - g.m[0,:])**2
-    bures = np.trace(f.cov[0,:,:] + g.cov[0,:,:] - 2 * (f.cov[0,:,:]**(1/2) @ g.cov[0,:,:] @ f.cov[0,:,:]**(1/2))**(1/2))
+    A1 = f.cov[0,:,:]
+    B = g.cov[0,:,:]
+    A2 = fmp(A1,0.5)
+    C = fmp(A2 @ B @ A2, 0.5)
+    bures = np.trace(A1 - B - 2 * C)
     W2 = mean_dist + bures
 
     return W2
