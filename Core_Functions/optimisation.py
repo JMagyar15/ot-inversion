@@ -1,5 +1,6 @@
 from .gmm_base import GMM_Transport, Wasserstein_Gradients, Gaussian_Mixture
 import numpy as np
+from scipy.linalg import eigh
 from scipy.optimize import minimize
 
 # def Line_Search(f,g,reg,num_iter=10):
@@ -114,3 +115,43 @@ def GMM_Inversion(f,g,reg):
     min_flat = minimize(GW_Flat,f_flat,args=(g,reg,d),method='BFGS',jac=dGW_Flat,options={'disp': True})
     #f_min = Unflattener(min_flat,d)
     return min_flat
+
+
+def Project_Simplex(p):
+    # ! firstly, do the projection of f.w onto the unit simplex
+    n = len(p)
+
+    p_sort = np.sort(p)
+
+    i = n - 1
+
+    while i > 0:
+        t_i = (np.sum(p_sort[i:]) - 1) / (n - i)
+
+        if t_i > p_sort[i-1]:
+            t_hat = t_i
+            x = p - t_hat
+            x[x < 0] = 0
+            return x
+        else:
+            i -= 1
+    t_hat = (np.sum(p) - 1) / n
+    x = p - t_hat
+    x[x < 0] = 0
+    return x
+
+def Project_SemiPosDef(cov):
+    n = np.shape(cov)[0]
+    proj_cov = np.zeros(np.shape(cov))
+    for i in range(n):
+        lamb, U = eigh(cov[i,:,:])
+        lamb[lamb < 0] = 0
+        proj_cov[i,:,:] = np.real(U @ np.diag(lamb) @ U.transpose())
+    return proj_cov
+
+def Projection(f):
+    f_proj = Gaussian_Mixture(f.n,f.d)
+    f_proj.assign_w(Project_Simplex(f.w))
+    f_proj.assign_m(f.m)
+    f_proj.assign_cov(Project_SemiPosDef(f.cov))
+    return f_proj

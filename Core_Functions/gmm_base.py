@@ -104,7 +104,7 @@ def Analytical_Wasserstein(f,g):
     B = g.cov[0,:,:]
     A2 = fmp(A1,0.5)
     C = fmp(A2 @ B @ A2, 0.5)
-    bures = np.trace(A1 - B - 2 * C)
+    bures = np.trace(A1 + B - 2 * C)
     W2 = mean_dist + bures
 
     return W2
@@ -150,8 +150,8 @@ def GMM_Transport(f,g,reg):
     W = Wasserstein_Cost(f,g)
     # now do log domain OT to get plan and the dictionary
     P, log = ot.bregman.sinkhorn_stabilized(f.w,g.w,W,reg,log=True)
-    alpha = reg * log['logu']
-    beta = reg * log['logv']
+    alpha = log['alpha']
+    beta = log['beta']
     GW = np.sum(np.dot(f.w,alpha)) + np.sum(np.dot(g.w,beta))
     return GW, P, alpha
 

@@ -28,18 +28,20 @@ def Source_Target_2D(f,g,x_ran,y_ran,res=100):
     x = np.linspace(x_ran[0],x_ran[1],res)
     y = np.linspace(y_ran[0],y_ran[1],res)
 
-    xy = np.dstack((x,y))
+    X, Y = np.meshgrid(x,y)
+    
+    pos = np.empty(X.shape + (2,))
+    pos[:, :, 0] = X
+    pos[:, :, 1] = Y
 
     f_d = np.zeros([res,res])
     g_d = np.zeros([res,res])
 
     for i in range(f.n):
-        f_d += f.w[i] * multivariate_normal.pdf(xy, mean = f.m[i,:], cov = f.cov[i,:,:])
+        f_d += f.w[i] * multivariate_normal.pdf(pos, mean = f.m[i,:], cov = f.cov[i,:,:])
 
     for j in range(g.n):
-        g_d += g.w[j] * multivariate_normal.pdf(xy, mean = g.m[j,:], cov = g.cov[j,:,:])
-
-    X, Y = np.meshgrid(x,y)
+        g_d += g.w[j] * multivariate_normal.pdf(pos, mean = g.m[j,:], cov = g.cov[j,:,:])
 
     fig, ax = plt.subplots(ncols = 2, figsize=[12,6])
     ax[0].contourf(X,Y,f_d,cmap='binary')
