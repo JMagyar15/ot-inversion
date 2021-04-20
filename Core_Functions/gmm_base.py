@@ -23,7 +23,7 @@ class Gaussian_Mixture:
         if np.size(w_arr) != (self.n):
             raise Exception('number of weights and components are not equal')
         else:
-            self.w = w_arr / (np.sum(w_arr))
+            self.w = w_arr / (np.sum(w_arr)) #should be satisfied already but just in-case
     
     def assign_m(self,m_arr):
         """
@@ -44,7 +44,8 @@ class Gaussian_Mixture:
         Inputs:
             cov_arr: array containing concatenated covariance matrices (n*d x d numpy array)
         """
-        # TODO some sort of check that the matrix is positive definite
+        # TODO some sort of check that the matrix is semi positive definite
+        # check the dimensions - d x d matrix for each component
         if np.shape(cov_arr) != (self.n,self.d,self.d):
             raise Exception('covariance matrices are of wrong dimension or number is not equal to number of components')
         else:
@@ -60,9 +61,10 @@ class Analytical_Gradients:
         self.cov = np.zeros([f.n,g.n,f.d,f.d])
         for i in range(f.n):
             for j in range(g.n):
+                # firstly, derivative w.r.t. mean vectors
                 self.mean[i,j,:] = 2 * (f.m[i,:] - g.m[j,:])
 
-                # * split this into lots of parts to make sure it is right!
+                # now the more complicated case w.r.t. covariance matrices
                 A1 = fmp(f.cov[i,:,:],-0.5)
                 A2 = fmp(f.cov[i,:,:],0.5)
                 B = g.cov[j,:,:]
@@ -97,17 +99,24 @@ def Analytical_Wasserstein(f,g):
     Outputs:
         W2: exact 2-Wasserstein distance between f and g (float)
     """
-    #add error here if both f and g are not 1 component Gaussian_Mixture
+    # firstly, check they are both 1-component mixtures
+    if not ((f.n == 1) and (g.n == 1)):
+        raise Exception('mixtures have multiple components: only one is allowed')
+    else:
+        # firstly, the mean (shift) component
+        mean_dist = np.linalg.norm(f.m[0,:] - g.m[0,:])**2
 
-    mean_dist = np.linalg.norm(f.m[0,:] - g.m[0,:])**2
-    A1 = f.cov[0,:,:]
-    B = g.cov[0,:,:]
-    A2 = fmp(A1,0.5)
-    C = fmp(A2 @ B @ A2, 0.5)
-    bures = np.trace(A1 + B - 2 * C)
-    W2 = mean_dist + bures
+        # now the covariance (reshape) component
+        A1 = f.cov[0,:,:]
+        B = g.cov[0,:,:]
+        A2 = fmp(A1,0.5)
+        C = fmp(A2 @ B @ A2, 0.5)
+        bures = np.trace(A1 + B - 2 * C)
 
-    return W2
+        # add them to get total work analytical
+        W2 = mean_dist + bures
+
+        return W2
 
 
 def Wasserstein_Cost(f,g):
@@ -137,7 +146,8 @@ def Wasserstein_Cost(f,g):
 
 def GMM_Transport(f,g,reg):
     """
-    Using log-domain Sinkhorn iterations to solve the entropically regularised Gaussian mixture model OT problem.
+    Computes the Gauss-Wasserstein distance and optimal transport plan using log-domain Sinkhorn iterations to solve the 
+    entropically regularised Gaussian mixture model OT problem.
     Inputs:
         f: source mixture (Gaussian_Mixture)
         g: target mixture (Gaussian_Mixture)
@@ -148,10 +158,15 @@ def GMM_Transport(f,g,reg):
         alpha: log domain scaling vector rescaled by regularisation parameter (1 x n array)   
     """
     W = Wasserstein_Cost(f,g)
+
     # now do log domain OT to get plan and the dictionary
     P, log = ot.bregman.sinkhorn_stabilized(f.w,g.w,W,reg,log=True)
+
+    #also get the Kantorovich potential vectors to compute the Wasserstein approximation
     alpha = log['alpha']
     beta = log['beta']
+
+    #compute the Gauss-Wasserstein under entropic approximation
     GW = np.sum(np.dot(f.w,alpha)) + np.sum(np.dot(g.w,beta))
     return GW, P, alpha
 
@@ -165,9 +180,7 @@ def Wasserstein_Gradients(f,g,P,alpha):
         P: optimal transport plan between weighting vectors (n x m array)
         alpha: scaling vector from GMM_Transport (1 x n array)
     Outputs:
-        dGW_dp: derivative of GW with respect to each component weight (1 x n array)
-        dGW_dmu: derivative of GW with respect to each mean vector (n x d array)
-        dGW_dsigma: derivative of GW with respect to each covariance matrix (n x d x d array)
+        grad_mix: the derivative of the Gaussian-Wasserstein distance with respect to the respective model parameter in this pseudo-mixture (Gaussian_Mixture)
     """
     # w.r.t. weights is simple: the weights are the data so normal entropic regularisation result from dual problem.
     dGW_dp = alpha - np.mean(alpha)
@@ -185,7 +198,12 @@ def Wasserstein_Gradients(f,g,P,alpha):
     dGW_dmu = np.sum(dGW_dmu,axis=1)
     dGW_dsigma = np.sum(dGW_dsigma,axis=1)
 
-    return dGW_dp, dGW_dmu, dGW_dsigma
+    grad_mix = Gaussian_Mixture(f.n,f.d)
+    grad_mix.assign_w(dGW_dp)
+    grad_mix.assign_m(dGW_dmu)
+    grad_mix.assign_cov(dGW_dsigma)
+
+    return grad_mix
 
 
 

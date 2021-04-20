@@ -3,40 +3,7 @@ import numpy as np
 from scipy.linalg import eigh
 from scipy.optimize import minimize
 
-# def Line_Search(f,g,reg,num_iter=10):
-#     f_k = f
-#     g_k = g
-#     GW2 = np.zeros(num_iter+1)
 
-#     for k in range(1,num_iter+1):
-#         GW2[k-1], P, alpha = GMM_Transport(f_k,g_k,reg)
-#         dGW_dp, dGW_dmu, dGW_dsigma = Wasserstein_Gradients(f_k,g_k,P,alpha)
-
-#         #now want to do gradient descent for a variety of step sizes
-#         GW_a = np.zeros(20)
-#         i = 0
-
-#         for a in np.linspace(0,0.5,20):
-#             adGW_dp = a * dGW_dp
-#             adGW_dmu = a * dGW_dmu
-#             adGW_dsigma = a * dGW_dsigma
-
-#             f_k_a = Gaussian_Mixture(f.n,f.d)
-
-#             f_k_a.assign_w(f_k.w - adGW_dp)
-#             f_k_a.assign_m(f_k.m - adGW_dmu)
-#             f_k_a.assign_cov(f_k.cov - adGW_dsigma)
-            
-#             # TODO need to do a check that the covariance matrix is valid - positive semidefinite?
-#             # TODO if so, need to make GW_a[i] NaN and use nanargmin to get good step size 
-
-#             GW_a[i] = GMM_Transport(f_k_a,g,reg)[0]
-
-#             i += 1
-
-#         step = np.argmin(GW_a)
-
-        
 # * To use the in-built optimisation, want to have source parameters in vector
 
 def Flattener(f):
@@ -118,7 +85,13 @@ def GMM_Inversion(f,g,reg):
 
 
 def Project_Simplex(p):
-    # ! firstly, do the projection of f.w onto the unit simplex
+    """
+    Projects an arbitrary weighting vector onto the unit simplex. 
+    Inputs:
+        p: weighting vector to be projected onto simplex (array)
+    Outputs:
+        x: the vector p projected onto the unit simplex (array)
+    """
     n = len(p)
 
     p_sort = np.sort(p)
@@ -141,6 +114,13 @@ def Project_Simplex(p):
     return x
 
 def Project_SemiPosDef(cov):
+    """
+    Projects the updated symmetric covariance matrix candidates onto the cone of semi positive definite matrices.
+    Inputs:
+        cov: candidate covariance matrices (n x d x d array)
+    Outputs:
+        proj_cov: the matrices in cov projected onto cone of semi positive definite matrices (n x d x d array)
+    """
     n = np.shape(cov)[0]
     proj_cov = np.zeros(np.shape(cov))
     for i in range(n):
@@ -150,8 +130,44 @@ def Project_SemiPosDef(cov):
     return proj_cov
 
 def Projection(f):
+    """
+    Projects candidate mixture parameters onto the space of valid mixture models.
+    Inputs:
+        f: GMM with candidate parameters (Gaussian_Mixture)
+    Outputs:
+        f_proj: the candidate mixture with projected parameters (Gaussian_Mixture)
+    """
     f_proj = Gaussian_Mixture(f.n,f.d)
     f_proj.assign_w(Project_Simplex(f.w))
     f_proj.assign_m(f.m)
     f_proj.assign_cov(Project_SemiPosDef(f.cov))
     return f_proj
+
+
+def Search_Point(f_old,descent,alpha):
+    f_new = gb.Gaussian_Mixture(f_old.n,f_old.d)
+    f_new.assign_w(f_old.w - alpha * descent.w)
+    f_new.assign_m(f_old.w - alpha * descent.m)
+    f_new.assign_cov(f_old.w - alpha * descent.cov)
+
+    f_new_p = Projection(f_new)
+    return f_new_p
+
+
+def Gradient_Descent(f_k,g,reg):
+    # ! Just needs to compute steepest descent direction - the rest is done in GMM_Optimise
+    GW, P, alpha = GMM_Transport(f_k,g,reg)
+    direction = Wasserstein_Gradients(f_k,g,P,alpha)
+    return direction, GW
+
+def BFGS(f_k,g,reg):
+    # ! Again, just needs to get the search direction, the rest will be done later
+    return
+
+def Line_Search():
+    # ! takes a search direction and performs a line search, returns minimum on this path
+    return
+
+def GMM_Optimise(f0,g,reg,method='Gradient_Descent'):
+    # ! just loop through the above functions in this master function
+    return
