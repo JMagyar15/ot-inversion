@@ -71,6 +71,7 @@ def dGW_Flat(f_flat,g,reg,d):
     Returns:
         dGW_flat: derivative of Gaussian-Wasserstein with respect to each source model parameter in same order as f_flat (array)
     """
+    # ! this doesn't work anymore - output of Wasserstein_Gradients is now a Gaussian_Mixture
     f = Unflattener(f_flat,d)
     GW, P, alpha = GMM_Transport(f,g,reg)
     dGW_dp, dGW_dmu, dGW_dsigma = Wasserstein_Gradients(f,g,P,alpha)
@@ -145,29 +146,80 @@ def Projection(f):
 
 
 def Search_Point(f_old,descent,alpha):
-    f_new = gb.Gaussian_Mixture(f_old.n,f_old.d)
+    """
+    For a given descent direction and step size, updates the GMM via a projection onto the set of valid GMMs.
+    Inputs:
+        f_old: GMM at the previous iteration (Gaussian_Mixture)
+        descent: search direction (Gaussian_Mixture)
+        alpha: step size (float)
+    Outputs:
+        f_new_p: search point projected onto valid set (Gaussian_Mixture)
+    """
+    f_new = Gaussian_Mixture(f_old.n,f_old.d)
     f_new.assign_w(f_old.w - alpha * descent.w)
-    f_new.assign_m(f_old.w - alpha * descent.m)
-    f_new.assign_cov(f_old.w - alpha * descent.cov)
+    f_new.assign_m(f_old.m - alpha * descent.m)
+    f_new.assign_cov(f_old.cov - alpha * descent.cov)
 
     f_new_p = Projection(f_new)
     return f_new_p
 
+def Linear_Steps(f_k, grad_f, g, reg, a_max = 1, num_steps=20, line = False):
+    steps = np.linspace(0,a_max,num_steps)
+    GW = np.zeros(num_steps)
 
-def Gradient_Descent(f_k,g,reg):
-    # ! Just needs to compute steepest descent direction - the rest is done in GMM_Optimise
-    GW, P, alpha = GMM_Transport(f_k,g,reg)
-    direction = Wasserstein_Gradients(f_k,g,P,alpha)
-    return direction, GW
+    i = 0
+    for a in steps:
+        f_a = Search_Point(f_k, grad_f, a)
+        GW[i] = GMM_Transport(f_a, g, reg)[0]
+        i += 1
 
-def BFGS(f_k,g,reg):
-    # ! Again, just needs to get the search direction, the rest will be done later
+    a_k = steps[np.nanargmin(GW)]
+    if line == False:
+        return a_k
+    else:
+        return a_k, GW
+
+
+def Backtracking():
     return
 
-def Line_Search():
-    # ! takes a search direction and performs a line search, returns minimum on this path
-    return
+def Steepest_Descent(f,g,reg,num_iter=20):
+    
+    GW_arr = np.zeros(num_iter)
 
-def GMM_Optimise(f0,g,reg,method='Gradient_Descent'):
-    # ! just loop through the above functions in this master function
-    return
+    for k in range(num_iter):
+        #do the OT calculations
+        GW_arr[k], P, alpha = GMM_Transport(f,g,0.01)
+        grad = Wasserstein_Gradients(f,g,P,alpha)
+
+        a_k = Linear_Steps(f, grad, g, reg)
+        f = Search_Point(f,grad,a_k)
+    
+    return f, GW_arr
+
+
+# def Gradient_Descent():
+#     """
+#     Computes the search direction via steepest descent. 
+#     """
+#     # ! Just needs to compute steepest descent direction - the rest is done in GMM_Optimise
+#     return 
+
+# def BFGS():
+#     # ! Again, just needs to get the search direction, the rest will be done later
+#     return
+
+# def Line_Search():
+#     # ! takes a search direction and performs a line search, returns minimum on this path
+#     return
+
+# def GMM_Optimise(f0,g,reg,method='Gradient_Descent',num_iter=20):
+#     # ! just loop through the above functions in this master function
+    
+#     for k in range(num_iter):
+    
+#         if method == 'Gradient_Descent':
+        
+#         if method == 'BFGS':
+#             # TODO add some initialisation of the Hessian - some multiple of identity?
+#     return

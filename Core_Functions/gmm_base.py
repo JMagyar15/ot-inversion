@@ -23,7 +23,7 @@ class Gaussian_Mixture:
         if np.size(w_arr) != (self.n):
             raise Exception('number of weights and components are not equal')
         else:
-            self.w = w_arr / (np.sum(w_arr)) #should be satisfied already but just in-case
+            self.w = w_arr
     
     def assign_m(self,m_arr):
         """
@@ -44,7 +44,6 @@ class Gaussian_Mixture:
         Inputs:
             cov_arr: array containing concatenated covariance matrices (n*d x d numpy array)
         """
-        # TODO some sort of check that the matrix is semi positive definite
         # check the dimensions - d x d matrix for each component
         if np.shape(cov_arr) != (self.n,self.d,self.d):
             raise Exception('covariance matrices are of wrong dimension or number is not equal to number of components')
