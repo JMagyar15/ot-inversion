@@ -274,19 +274,17 @@ def Gradients(q,P,InvBM,m_points,L):
             for l in range(d):
                 dR_dL[:,j,k,l] = dS_dL[:,j,k,l] - np.mean(dS_dL[:,j,k,l])
                 dR_db[:,j,k] = dS_db[:,j,k] - np.mean(dS_db[:,j,k])
-    return dR_dL, dR_db
+    return dS_dL, dS_db
 
-def Centred_Gradients(dS_dL,dS_db):
-    m, num,d = np.shape(dS_db)
-    dR_dL = np.zeros([m * num,d,d])
-    dR_db = np.zeros([m * num,d])
-
-    for k in range(d):
-        dR_db[:,k] = dS_db[:,:,k].flatten() - np.mean(dS_db[:,:,k].flatten())
-        for l in range(d):
-            dR_dL[:,k,l] = dS_dL[:,:,k,l].flatten() - np.mean(dS_dL[:,:,k,l].flatten())
-
-    return dR_dL, dR_db
+def log_Gradients(dS_dL,dS_db,S):
+    Sf = S.flatten()
+    mn, m, d = np.shape(dS_db)
+    for j in range(m):
+        for k in range(d):
+            dS_db[:,j,k] /= Sf
+            for l in range(d):
+                dS_dL[:,j,k,l] /= Sf
+    return dS_dL, dS_db
 
 def Map_Inversion(Maps):
     """
@@ -395,7 +393,7 @@ def Chol_Loc_Derivs(InvBM,m_points,dBb_dLj,k,l):
     for num in range(m_points.num): #loop through each model point
         for row in range(d): #now loop through the rows and columns of Bb
             for col in range(d):
-                dm_dBb[num,row,col,:] = m_points.pick(num)[row] * np.ones(d)
+                dm_dBb[num,row,col,col] = m_points.pick(num)[row]
                 dm_dLj[num,:] += dm_dBb[num,row,col,:] * dBb_dLj[l,k,row,col] #! definitely need to check index order here!!
     
     return dm_dLj
