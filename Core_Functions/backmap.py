@@ -99,6 +99,13 @@ class Model_Points:
         Mapped = Model_Points(map_x)
         return Mapped
 
+    def logGauss(self):
+        log = np.zeros([self.num])
+        for i in range(self.num):
+            point = self.pick(i)
+            log[i] = self.d - np.log(np.sqrt(2 * np.pi)) - 0.5 * np.sum(point**2)
+        return log
+
 
 def Partitioner(q,InvV,Posterior,m_points):
     """
@@ -137,7 +144,7 @@ def Partitioner(q,InvV,Posterior,m_points):
     
     return Q, P, g_est
 
-def Log_Scaling(P,q,InvV,m_points):
+def Log_Scaling(Posterior,q,InvV,m_points):
     """
     Determines the log ratio between the backmapped posterior evaluations and reference distribution for each backmapped point.
     Inputs:
@@ -149,8 +156,29 @@ def Log_Scaling(P,q,InvV,m_points):
         s: the log scaling ratio for each model point under each map (m x N array)
         r: the residual for each log ratio from the mean log ratio (m x N array)
     """
-    m = InvV.n
+
+    m = InvV.n #get the number of maps being used 
     d = InvV.d
+
+    Q = np.zeros([m,m_points.num]) #initialise the partition functions
+    logQ = np.zeros([m,m_points.num])
+    
+    for j in range(m):
+        #backmap the points from the posterior to the intermediate
+        backmap = m_points.map(InvV,j)
+        #determine the current mixture using a change of variables
+        det = InvV.L[j,:,:].diagonal().prod()**2
+        Q[j,:] = q[j] * multivariate_normal.pdf(backmap.all,mean=np.zeros(m_points.d),cov=np.eye(m_points.d)) * det
+        logQ[j,:] = np.log(q[j]) + backmap.logGauss() + np.log(det)
+    #now we have the total mixture
+    g_est = np.sum(Q,axis=0)
+    logP = np.zeros([m,m_points.num])
+    for j in range(m):
+        #the partitioner can be found from these
+        logQ[j,:] -= np.log(g_est)
+        #apply the partitioner to the posterior evaluations to get the partitioned components
+        logP[j,:] = np.log(Posterior) + logQ[j,:]
+  
     ref = multivariate_normal(mean=np.zeros(d),cov=np.eye(d))
     s = np.zeros([m,m_points.num])
     r = np.zeros([m,m_points.num])
@@ -158,7 +186,7 @@ def Log_Scaling(P,q,InvV,m_points):
     for j in range(m):
         backtrack = m_points.map(InvV,j)
         det = InvV.L[j,:,:].diagonal().prod() ** 2
-        s[j,:] = np.log(P[j,:]) - np.log(q[j]) - np.log(ref.pdf(backtrack.all)) - np.log(det)
+        s[j,:] = logP[j,:] - np.log(q[j]) - backtrack.logGauss() - np.log(det)
         r[j,:] = s[j,:] - np.mean(s[j,:])
     return s, r
 
@@ -171,8 +199,8 @@ def Map_Gradients(InvV,m_points):
     #now use these to initialise the arrays
     ds_dL = np.zeros([m,d,d,N])
     ds_db = np.zeros([m,d,N])
-    dM_dL = np.zeros([d,d,d,d])
-    dy_dL = np.zeros([m,d,d,d])
+    dM_dL = Cholesky_Derivs(InvV,m_points)
+    dy_dL = np.zeros([m,d,d,d,N])
 
     #we will also want the reference normal distribution
     ref = multivariate_normal(mean=np.zeros(d),cov=np.eye(d))
@@ -185,9 +213,24 @@ def Map_Gradients(InvV,m_points):
                     ds_db[j,k,i] = backtrack.pick(i)[k]
                     for row in range(d):
                         for col in range(d):
-                            dy_dL[j,l,k,l] += m_points.pick(i)[k] * dM_dL[j,row,col,k,l]
-                    ds_dL[j,k,l,i] = np.inner(backtrack.pick(i),dy_dL[j,:,k,l])
+                            dy_dL[j,row,k,l,i] += m_points.pick(i)[col] * dM_dL[j,row,col,k,l]
+                    ds_dL[j,k,l,i] = np.inner(backtrack.pick(i),dy_dL[j,:,k,l,i])
+                if l == k:
+                    ds_dL[j,k,l,i] -= (2 / (InvV.L[j,l,k]))
+    #return dy_dL
     return ds_dL, ds_db
+
+def Centre_Gradients(ds_dL,ds_db):
+    m,d,N = np.shape(ds_db)
+    dr_dL = np.zeros([m,d,d,N])
+    dr_db = np.zeros([m,d,N])
+    
+    for j in range(m):
+        for k in range(d):
+            dr_db[j,k,:] = ds_db[j,k,:] - np.mean(ds_db[j,k,:])
+            for l in range(d):
+                dr_dL[j,k,l,:] = ds_dL[j,k,l,:] - np.mean(ds_dL[j,k,l,:])
+    return dr_dL, dr_db
 
 def Cholesky_Derivs(InvV,m_points):
     m = InvV.n
@@ -205,5 +248,40 @@ def Cholesky_Derivs(InvV,m_points):
                 dM_dL[j,k,l,l,:] += InvV.L[j,k,:] 
     return dM_dL
 
-def Weight_Gradients():
-    return
+def Weight_Gradients(InvV,q,m_points,Posterior):
+    """
+    Takes the current inverse beta maps and posterior evaluations and determines the derivative of the evidence (as a function of the model)
+    with respect to the posterior component weights.
+    Inputs:
+        q: current estimate of the posterior component weighting vector
+        InvBM: current estimate of inverse beta maps (Affine_Maps)
+        Posterior: posterior evaluations
+        m_points: points in the model space at which the posterior was evaluated at (Model_Points)
+    Outputs:
+        ds_dq: derivative of the evidence at each point with respect to the components of the weighting vector q
+    """
+
+    m = InvV.n
+    d = InvV.d
+
+    #lets create our reference difstribution
+    ref = multivariate_normal(mean=np.zeros(d),cov=np.eye(d))
+
+    #now we will need some empty arrays to fill
+    h = np.zeros([m,m_points.num])
+    mix = np.zeros([m_points.num])
+    ds_dq = np.zeros([m,m,m_points.num])
+    dr_dq = np.zeros([m,m_points.num])
+
+    #we will need to loop over each component
+    for j in range(m):
+        #compute the j backmapping and the reference
+        backmap = m_points.map(InvV,j)
+        h[j,:] = ref.pdf(backmap.all) * (InvV.L[j,:,:].diagonal().prod() **2)
+        mix += q[j] * h[j,:]
+
+    for j in range(m):
+        for k in range(m):
+            ds_dq[j,k,:] =  - q[k] * ((h[k,:] ) / mix) - 1 / q[k]
+        ds_dq[j,j,:] += 1 / q[j]
+    return ds_dq
