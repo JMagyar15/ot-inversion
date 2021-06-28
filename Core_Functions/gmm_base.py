@@ -6,49 +6,19 @@ class Gaussian_Mixture:
     """
     Creates a new Gaussian Mixture Model. 
     """
-    def __init__(self,n,d):
+    def __init__(self,w,mean,cov):
         """
         Creates a new Guassian_Mixture object with n components in d dimensions.
         """
+        self.w = w
+        self.m = mean
+        self.cov = cov
+
+        n, d = np.shape(mean)
+
         self.n = n
         self.d = d
-        
-    
-    def assign_w(self,w_arr):
-        """
-        Assigns the weights to the corresponding Gaussian components.
-        Inputs:
-            w_arr: vector of weights (1 x n numpy array)
-        """
-        if np.size(w_arr) != (self.n):
-            raise Exception('number of weights and components are not equal')
-        else:
-            self.w = w_arr
-    
-    def assign_m(self,m_arr):
-        """
-        Assigns a mean vector to each of the Gaussian components.
-        Inputs:
-            m_arr: array of mean vectors. Rows correspond to Gaussian components,
-            columns to each coordinate (n x d numpy array)
-        """
-        #check that rows = n, cols = d
-        if np.shape(m_arr) != (self.n,self.d):
-            raise Exception('mean vectors are of wrong dimension or number is not equal to number of components')
-        else:
-            self.m = m_arr
 
-    def assign_cov(self,cov_arr):
-        """
-        Assigns the covariance matrices to each of the Gaussian components. 
-        Inputs:
-            cov_arr: array containing concatenated covariance matrices (n*d x d numpy array)
-        """
-        # check the dimensions - d x d matrix for each component
-        if np.shape(cov_arr) != (self.n,self.d,self.d):
-            raise Exception('covariance matrices are of wrong dimension or number is not equal to number of components')
-        else:
-            self.cov = cov_arr
 
 
 class Analytical_Gradients:
